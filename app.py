@@ -4,6 +4,10 @@ import plotly.express as px
 import re
 from collections import Counter
 
+from wealth_data import load_dashboard_data, resolve_data_source
+
+DASHBOARD_DATA_SOURCE = "supabase"
+
 st.set_page_config(
     page_title="국회의원 재산공개 대시보드",
     layout="wide",
@@ -71,38 +75,16 @@ st.markdown("""
 
 @st.cache_data
 def load_data():
-    csv_path = "재산공개_파싱.csv"
     try:
-        df = pd.read_csv(csv_path)
+        return load_dashboard_data(source=DASHBOARD_DATA_SOURCE)
     except Exception as e:
         return pd.DataFrame(), pd.DataFrame()
 
-    # Clean numeric columns
-    numeric_cols = ["종전가액(천원)", "증가액(천원)", "감소액(천원)", "현재가액(천원)"]
-    for col in numeric_cols:
-        df[col] = df[col].astype(str).str.replace(r'[^\d\-.]', '', regex=True)
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-    # Remove empty names and header rows
-    df = df[df['성명'].notna()]
-    df = df[~df['성명'].str.contains('공지사|공개목|공고|공직자윤리법|국회공직자윤리위원', na=False)]
-
-    # Filter 국회의원 + 의장 + 부의장 (exclude 전문위원, 사무총장 etc.)
-    df = df[df['직위'].isin(['국회의원', '국회의장', '국회부의장'])].copy()
-
-    # Separate the '총 계' (Total) rows from the detailed records
-    df_totals = df[df['본인과의 관계'] == '총 계'].copy()
-    df_records = df[df['본인과의 관계'] != '총 계'].copy()
-
-    # Calculate net increase/decrease
-    df_totals['순증감액(천원)'] = df_totals['증가액(천원)'] - df_totals['감소액(천원)']
-
-    return df_records, df_totals
-
 df_records, df_totals = load_data()
+data_source = resolve_data_source(DASHBOARD_DATA_SOURCE)
 
 if df_records.empty or df_totals.empty:
-    st.error("데이터를 불러오지 못했습니다. CSV 파일 경로와 상태를 확인해주세요.")
+    st.error("Supabase에서 대시보드 데이터를 불러오지 못했습니다. 배치 상태와 환경변수를 확인해주세요.")
     st.stop()
 
 # Sidebar header with styling
@@ -130,6 +112,7 @@ st.sidebar.info(f"""
 - 총 의원 수: {len(df_totals)}명
 - 분석 항목: 9개 카테고리
 - 데이터: 2026년 재산공개
+- 소스: {data_source}
 """)
 
 st.sidebar.markdown("---")

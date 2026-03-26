@@ -2,22 +2,10 @@ import pandas as pd
 import re
 from collections import Counter
 
+from wealth_data import load_analysis_records
+
 # Load data
-df = pd.read_csv("재산공개_파싱.csv")
-
-# Clean numeric columns
-numeric_cols = ["종전가액(천원)", "증가액(천원)", "감소액(천원)", "현재가액(천원)"]
-for col in numeric_cols:
-    df[col] = df[col].astype(str).str.replace(r'[^\d\-.]', '', regex=True)
-    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-# Remove rows without names and header rows
-df = df[df['성명'].notna()]
-df = df[df['본인과의 관계'] != '총 계']
-df = df[~df['성명'].str.contains('공지사|공개목|공고|공직자윤리법|국회공직자윤리위원', na=False)]
-
-# Filter 국회의원 + 의장 + 부의장 (exclude 전문위원, 사무총장 etc.)
-df = df[df['직위'].isin(['국회의원', '국회의장', '국회부의장'])].copy()
+df = load_analysis_records()
 
 print("CSV 파일 생성 중...")
 
