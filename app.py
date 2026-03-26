@@ -24,6 +24,9 @@ def load_data():
     df = df[df['성명'].notna()]
     df = df[~df['성명'].str.contains('공지사|공개목|공고|공직자윤리법|국회공직자윤리위원', na=False)]
 
+    # Filter 국회의원 + 의장 + 부의장 (exclude 전문위원, 사무총장 etc.)
+    df = df[df['직위'].isin(['국회의원', '국회의장', '국회부의장'])].copy()
+
     # Separate the '총 계' (Total) rows from the detailed records
     df_totals = df[df['본인과의 관계'] == '총 계'].copy()
     df_records = df[df['본인과의 관계'] != '총 계'].copy()
@@ -214,87 +217,65 @@ elif menu == "💼 주식 포트폴리오":
 
 elif menu == "🚗 자동차 분석":
     st.title("🚗 국회의원 자동차 보유 분석")
+    st.subheader("차량 3대 이상 보유 현황")
 
     car_df = df_records[df_records['재산의 종류'] == '자동차'].copy()
+    car_df = car_df[car_df['현재가액(천원)'] > 0].copy()
 
-    tab1, tab2 = st.tabs(["🏎️ 외제차 보유", "🚙 다차량 보유"])
+    # 차량 식별 정보 추출 (연식+차종+배기량으로 고유 차량 식별)
+    def extract_car_id(text):
+        if pd.isna(text):
+            return None
+        text = str(text)
+        year_match = re.search(r'(\d{4})년식', text)
+        year = year_match.group(1) if year_match else "unknown"
+        model_match = re.search(r'년식\s+([^\s]+)', text)
+        model = model_match.group(1) if model_match else "unknown"
+        cc_match = re.search(r'배기량\(([0-9,]+)cc\)', text)
+        cc = cc_match.group(1).replace(',', '') if cc_match else "unknown"
+        return f"{year}_{model}_{cc}"
 
-    with tab1:
-        st.subheader("외제차 보유 현황")
+    car_df['차량ID'] = car_df['소재지 면적 등 권리의 명세'].apply(extract_car_id)
 
-        luxury_brands = ['벤츠', 'BMW', '아우디', '포르쉐', '테슬라', '렉서스', '볼보',
-                         'Benz', 'Porsche', 'Audi', 'Lexus', 'Tesla', 'Mercedes',
-                         '람보르기니', '페라리', '맥라렌', '벤틀리', '롤스로이스',
-                         '마세라티', '애스턴마틴', '재규어', '랜드로버']
+    # 사람별 고유 차량 개수 카운트
+    car_counts = []
+    for name in car_df['성명'].unique():
+        person_cars = car_df[car_df['성명'] == name]
+        unique_cars = person_cars['차량ID'].nunique()
+        total_value = person_cars['현재가액(천원)'].sum()
+        car_counts.append({
+            '성명': name,
+            '총대수': unique_cars,
+            '총가액(천원)': total_value
+        })
 
-        luxury_car_df = car_df[car_df['소재지 면적 등 권리의 명세'].apply(
-            lambda x: any(brand in str(x) for brand in luxury_brands) if pd.notna(x) else False
-        )].copy()
+    car_count_df = pd.DataFrame(car_counts)
+    car_count_df = car_count_df[car_count_df['총대수'] >= 3].sort_values('총대수', ascending=False)
 
-        if not luxury_car_df.empty:
-            luxury_owners = luxury_car_df.groupby('성명').agg({
-                '현재가액(천원)': ['count', 'sum']
-            }).reset_index()
-            luxury_owners.columns = ['성명', '대수', '총가액(천원)']
-            luxury_owners = luxury_owners.sort_values('대수', ascending=False)
+    if not car_count_df.empty:
+        col1, col2 = st.columns([2, 1])
 
-            col1, col2 = st.columns([2, 1])
+        with col1:
+            fig = px.bar(car_count_df.head(15), x='성명', y='총대수',
+                       text='총대수', color='총가액(천원)', color_continuous_scale='Greens',
+                       title=f'차량 다수 보유자 TOP 15')
+            fig.update_traces(textposition='outside')
+            st.plotly_chart(fig, use_container_width=True)
 
-            with col1:
-                fig = px.bar(luxury_owners, x='성명', y='대수',
-                           text='대수', color='총가액(천원)', color_continuous_scale='Purples',
-                           title=f'외제차 보유자 ({len(luxury_owners)}명)')
-                fig.update_traces(textposition='outside')
-                st.plotly_chart(fig, use_container_width=True)
+        with col2:
+            st.metric("3대 이상 보유자", f"{len(car_count_df)}명")
+            st.metric("최다 보유", f"{int(car_count_df['총대수'].max())}대")
+            st.metric("평균 보유", f"{car_count_df['총대수'].mean():.1f}대")
 
-            with col2:
-                st.metric("총 외제차 보유", f"{int(luxury_owners['대수'].sum())}대")
-                st.metric("평균 보유 대수", f"{luxury_owners['대수'].mean():.1f}대")
-                st.metric("총 가액", format_korean_currency(luxury_owners['총가액(천원)'].sum()))
-
-            st.markdown("---")
-            luxury_owners['총가액(원)'] = luxury_owners['총가액(천원)'].apply(lambda x: format_korean_currency(x))
-            st.dataframe(
-                luxury_owners[['성명', '대수', '총가액(원)']],
-                use_container_width=True,
-                hide_index=True
-            )
-        else:
-            st.info("외제차 데이터가 없습니다.")
-
-    with tab2:
-        st.subheader("차량 3대 이상 보유 현황")
-
-        car_count_df = car_df.groupby('성명').agg({
-            '현재가액(천원)': ['count', 'sum']
-        }).reset_index()
-        car_count_df.columns = ['성명', '총대수', '총가액(천원)']
-        car_count_df = car_count_df[car_count_df['총대수'] >= 3].sort_values('총대수', ascending=False)
-
-        if not car_count_df.empty:
-            col1, col2 = st.columns([2, 1])
-
-            with col1:
-                fig = px.bar(car_count_df.head(15), x='성명', y='총대수',
-                           text='총대수', color='총가액(천원)', color_continuous_scale='Greens',
-                           title=f'차량 다수 보유자 TOP 15')
-                fig.update_traces(textposition='outside')
-                st.plotly_chart(fig, use_container_width=True)
-
-            with col2:
-                st.metric("3대 이상 보유자", f"{len(car_count_df)}명")
-                st.metric("최다 보유", f"{int(car_count_df['총대수'].max())}대")
-                st.metric("평균 보유", f"{car_count_df['총대수'].mean():.1f}대")
-
-            st.markdown("---")
-            car_count_df['총가액(원)'] = car_count_df['총가액(천원)'].apply(lambda x: format_korean_currency(x))
-            st.dataframe(
-                car_count_df[['성명', '총대수', '총가액(원)']],
-                use_container_width=True,
-                hide_index=True
-            )
-        else:
-            st.info("차량 3대 이상 보유자가 없습니다.")
+        st.markdown("---")
+        car_count_df['총가액(원)'] = car_count_df['총가액(천원)'].apply(lambda x: format_korean_currency(x))
+        st.dataframe(
+            car_count_df[['성명', '총대수', '총가액(원)']],
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("차량 3대 이상 보유자가 없습니다.")
 
 elif menu == "🏠 부동산 분석":
     st.title("🏠 국회의원 부동산 보유 분석")
@@ -419,12 +400,28 @@ elif menu == "👫 배우자 재산 비교":
 elif menu == "🌍 해외 자산":
     st.title("🌍 국회의원 해외 자산 보유 현황")
 
-    foreign_keywords = ['미국', '캐나다', '호주', '유럽', '중국', '일본', '베트남', '싱가포르', '홍콩', '영국', '프랑스', '독일']
-    foreign_assets = []
+    # 해외 자산 정확한 패턴 매칭
+    foreign_patterns = [
+        r'(미국|캐나다|호주|영국|프랑스|독일|일본|중국|싱가포르|홍콩)\s+([\w]+(?:주|도|성|현|시))',
+        r'\(미국\)|\(캐나다\)|\(호주\)|\(영국\)|\(일본\)|\(중국\)',
+        r'[A-Z][a-z]+\s+of\s+[A-Z]',
+    ]
 
+    foreign_assets = []
     for idx, row in df_records.iterrows():
+        if row['현재가액(천원)'] <= 0:
+            continue
+
         location = str(row['소재지 면적 등 권리의 명세'])
-        if any(keyword in location for keyword in foreign_keywords):
+
+        # 은행명 오검출 제외
+        if '은행' in location and not any(re.search(pattern, location) for pattern in foreign_patterns):
+            continue
+
+        # 패턴 매칭
+        is_foreign = any(re.search(pattern, location) for pattern in foreign_patterns)
+
+        if is_foreign:
             foreign_assets.append({
                 '성명': row['성명'],
                 '재산구분': row['재산 구분'],
