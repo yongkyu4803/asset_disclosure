@@ -4,7 +4,70 @@ import plotly.express as px
 import re
 from collections import Counter
 
-st.set_page_config(page_title="국회의원 재산공개 대시보드", layout="wide")
+st.set_page_config(
+    page_title="국회의원 재산공개 대시보드",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    page_icon="🏛️"
+)
+
+# Custom CSS
+st.markdown("""
+<style>
+    /* Main title styling */
+    .main .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+
+    /* Sidebar styling */
+    [data-testid="stSidebar"] {
+        background-color: #f8f9fa;
+    }
+
+    /* Metric styling */
+    [data-testid="stMetricValue"] {
+        font-size: 1.8rem;
+        font-weight: 600;
+    }
+
+    /* Expander styling */
+    .streamlit-expanderHeader {
+        background-color: #f0f2f6;
+        border-radius: 5px;
+        font-weight: 600;
+    }
+
+    /* Button styling */
+    .stButton>button {
+        width: 100%;
+        border-radius: 5px;
+        font-weight: 600;
+    }
+
+    /* Radio button styling */
+    .stRadio>label {
+        font-weight: 600;
+        font-size: 1.1rem;
+    }
+
+    /* Header styling */
+    h1 {
+        color: #1f77b4;
+        padding-bottom: 1rem;
+        border-bottom: 3px solid #1f77b4;
+    }
+
+    h2 {
+        color: #2c3e50;
+        margin-top: 1.5rem;
+    }
+
+    h3 {
+        color: #34495e;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 @st.cache_data
 def load_data():
@@ -42,16 +105,38 @@ if df_records.empty or df_totals.empty:
     st.error("데이터를 불러오지 못했습니다. CSV 파일 경로와 상태를 확인해주세요.")
     st.stop()
 
-st.sidebar.title("📊 메뉴")
-menu = st.sidebar.radio("이동", [
-    "전체 통계 및 순위",
+# Sidebar header with styling
+st.sidebar.markdown("<h1 style='text-align: center; color: #1f77b4;'>🏛️</h1>", unsafe_allow_html=True)
+st.sidebar.markdown("<h3 style='text-align: center;'>국회의원 재산공개</h3>", unsafe_allow_html=True)
+st.sidebar.markdown("<p style='text-align: center; color: #7f8c8d;'>2026 분석 대시보드</p>", unsafe_allow_html=True)
+st.sidebar.markdown("---")
+
+# Menu
+st.sidebar.title("📊 분석 메뉴")
+menu = st.sidebar.radio("", [
+    "👤 국회의원 조회",
+    "📈 전체 통계 및 순위",
     "💼 주식 포트폴리오",
     "🚗 자동차 분석",
     "🏠 부동산 분석",
     "👫 배우자 재산 비교",
-    "🌍 해외 자산",
-    "국회의원별 상세 조회"
+    "🌍 해외 자산"
 ])
+
+# Sidebar info
+st.sidebar.markdown("---")
+st.sidebar.info(f"""
+**📊 데이터 현황**
+- 총 의원 수: {len(df_totals)}명
+- 분석 항목: 9개 카테고리
+- 데이터: 2026년 재산공개
+""")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown(
+    "<p style='text-align: center; color: #95a5a6; font-size: 0.9rem;'>Made by <strong>GQAI.kr</strong></p>",
+    unsafe_allow_html=True
+)
 
 def format_currency(val):
     return f"{val*1000:,.0f}원"
@@ -79,8 +164,137 @@ def format_korean_currency(val_in_thousands):
     result = " ".join(parts) + "원"
     return "-" + result if is_negative else result
 
-if menu == "전체 통계 및 순위":
-    st.title("🏛️ 국회의원 재산 전체 통계 및 순위")
+if menu == "👤 국회의원 조회":
+    st.title("👤 국회의원별 상세 조회")
+
+    # 전체 통계 요약
+    st.markdown("### 📊 전체 개요")
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        total_members = len(df_totals)
+        st.metric("총 의원 수", f"{total_members}명")
+
+    with col2:
+        total_wealth = df_totals['현재가액(천원)'].sum()
+        st.metric("총 재산액", format_korean_currency(total_wealth))
+
+    with col3:
+        avg_wealth = df_totals['현재가액(천원)'].mean()
+        st.metric("평균 재산액", format_korean_currency(avg_wealth))
+
+    with col4:
+        max_wealth = df_totals['현재가액(천원)'].max()
+        max_member = df_totals[df_totals['현재가액(천원)'] == max_wealth]['성명'].iloc[0]
+        st.metric("최고 재산", f"{max_member}")
+
+    # 재산 분포 차트
+    st.markdown("### 💰 재산 총액 Top 10")
+    top10 = df_totals.sort_values("현재가액(천원)", ascending=False).head(10)
+    fig = px.bar(top10, x="성명", y="현재가액(천원)",
+                 text="현재가액(천원)", color="현재가액(천원)",
+                 color_continuous_scale="Blues")
+    fig.update_traces(texttemplate='%{text:,.0f}천원', textposition='outside')
+    fig.update_layout(height=400, showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # 검색 기능
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        search_name = st.text_input("🔍 의원 이름 검색", placeholder="이름을 입력하세요...")
+    with col2:
+        st.write("")
+        st.write("")
+        if st.button("🔄 초기화", use_container_width=True):
+            search_name = ""
+
+    # 필터링
+    if search_name:
+        filtered_members = df_totals[df_totals['성명'].str.contains(search_name, na=False)]
+    else:
+        filtered_members = df_totals
+
+    # 정렬 옵션
+    col1, col2 = st.columns(2)
+    with col1:
+        sort_by = st.selectbox("정렬 기준", ["재산 총액", "이름순"])
+    with col2:
+        if sort_by == "재산 총액":
+            sort_order = st.selectbox("정렬 순서", ["높은 순", "낮은 순"])
+        else:
+            sort_order = st.selectbox("정렬 순서", ["가나다순", "역순"])
+
+    # 정렬 적용
+    if sort_by == "재산 총액":
+        filtered_members = filtered_members.sort_values("현재가액(천원)",
+                                                       ascending=(sort_order == "낮은 순"))
+    else:
+        filtered_members = filtered_members.sort_values("성명",
+                                                       ascending=(sort_order == "가나다순"))
+
+    st.markdown("---")
+    st.subheader(f"총 {len(filtered_members)}명")
+
+    # 의원 목록 표시
+    for idx, row in filtered_members.iterrows():
+        with st.expander(f"**{row['성명']}** - {format_korean_currency(row['현재가액(천원)'])}"):
+            member_records = df_records[df_records['성명'] == row['성명']]
+
+            # 요약 정보
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("💰 재산 총액", format_korean_currency(row['현재가액(천원)']))
+            with col2:
+                increase = row['증가액(천원)'] - row['감소액(천원)']
+                st.metric("📊 순증감", format_korean_currency(increase))
+            with col3:
+                asset_count = len(member_records)
+                st.metric("📦 자산 항목", f"{asset_count}건")
+            with col4:
+                relations = member_records['본인과의 관계'].unique()
+                st.metric("👥 관계인", f"{len(relations)}명")
+
+            st.markdown("---")
+
+            # 재산 구분별 집계
+            asset_by_type = member_records.groupby('재산 구분')['현재가액(천원)'].sum().reset_index()
+            asset_by_type = asset_by_type[asset_by_type['현재가액(천원)'] > 0]
+            asset_by_type = asset_by_type.sort_values('현재가액(천원)', ascending=False)
+
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                if not asset_by_type.empty:
+                    fig = px.bar(asset_by_type, x='재산 구분', y='현재가액(천원)',
+                               color='현재가액(천원)', color_continuous_scale='Blues',
+                               title='재산 구분별 보유액')
+                    fig.update_traces(texttemplate='%{y:,.0f}천원', textposition='outside')
+                    st.plotly_chart(fig, use_container_width=True)
+
+            with col2:
+                st.markdown("**재산 구분별 상세**")
+                for _, asset_row in asset_by_type.iterrows():
+                    st.write(f"- **{asset_row['재산 구분']}**: {format_korean_currency(asset_row['현재가액(천원)'])}")
+
+            # 상세 내역 테이블
+            st.markdown("---")
+            st.markdown("**전체 자산 목록**")
+
+            display_df = member_records[['본인과의 관계', '재산 구분', '재산의 종류',
+                                        '소재지 면적 등 권리의 명세', '현재가액(천원)']].copy()
+            display_df['현재가액(원)'] = display_df['현재가액(천원)'].apply(lambda x: format_korean_currency(x))
+            display_df = display_df[display_df['현재가액(천원)'] > 0]
+            display_df = display_df.sort_values('현재가액(천원)', ascending=False)
+
+            st.dataframe(
+                display_df[['본인과의 관계', '재산 구분', '재산의 종류', '소재지 면적 등 권리의 명세', '현재가액(원)']],
+                use_container_width=True,
+                hide_index=True
+            )
+
+elif menu == "📈 전체 통계 및 순위":
+    st.title("📈 국회의원 재산 전체 통계 및 순위")
 
     st.markdown("---")
 
@@ -478,7 +692,7 @@ elif menu == "🌍 해외 자산":
     else:
         st.info("해외 자산 데이터가 없습니다.")
 
-elif menu == "국회의원별 상세 조회":
+elif menu == "_old_member_search":  # This should never match
     st.title("👤 국회의원별 상세 조회")
 
     members = sorted(df_totals['성명'].dropna().unique())
